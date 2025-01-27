@@ -8,6 +8,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+
+#include <ew/texture.h>
 #include <ew/shader.h>
 #include <ew/model.h>
 #include <ew/transform.h>
@@ -40,6 +42,9 @@ int main() {
 	ew::Model monkeyModel = ew::Model("assets/suzanne.obj");
 	ew::Transform monkeyTransform;
 
+	GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
+
+	glBindTextureUnit(0, brickTexture);
 
 	camera.position = glm::vec3(0.0f, 0.0f, 5.0f);
 	camera.target = glm::vec3(0.0f, 0.0f, 0.0f); //Look at the center of the scene
@@ -68,7 +73,7 @@ int main() {
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
 
 		shader.use();
-
+		shader.setInt("_MainTex", 0);
 		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
 
 		monkeyModel.draw(); //Draws monkey model using current shader
