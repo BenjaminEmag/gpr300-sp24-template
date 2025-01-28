@@ -46,11 +46,17 @@ int main() {
 	glEnable(GL_DEPTH_TEST); //Depth testing
 
 	ew::Shader shader = ew::Shader("assets/lit.vert", "assets/lit.frag");
-	ew::Model monkeyModel = ew::Model("assets/suzanne.obj");
+	ew::Model monkeyModel = ew::Model("assets/suzanne.fbx");
 	ew::Transform monkeyTransform;
 
-	GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
-	glBindTextureUnit(0, brickTexture);
+	GLuint brickTexture = ew::loadTexture("assets/brick2_color.jpg");
+	GLuint brickNormal = ew::loadTexture("assets/brick2_normal.jpg");
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, brickTexture);
+
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, brickNormal);
 
 	camera.position = glm::vec3(0.0f, 0.0f, 5.0f);
 	camera.target = glm::vec3(0.0f, 0.0f, 0.0f); //Look at the center of the scene
@@ -80,6 +86,7 @@ int main() {
 
 		shader.use();
 		shader.setInt("_MainTex", 0);
+		shader.setInt("_NormalMap", 1);
 		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
 		shader.setVec3("_EyePos", camera.position);
 
