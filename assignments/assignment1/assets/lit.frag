@@ -24,9 +24,11 @@ uniform Material _Material;
 
 void main() {
     // Sample normal map and transform from tangent space to world space
-    vec3 normal = texture(_NormalMap, fs_in.TexCoord).rgb;
-    normal = normalize(normal * 2.0 - 1.0); // Transform from [0, 1] to [-1, 1]
-    normal = normalize(fs_in.TBN * normal); // Transform to world space
+    vec3 normalTangent = texture(_NormalMap, fs_in.TexCoord).rgb;
+    normalTangent = normalize(normalTangent * 2.0 - 1.0);
+    
+    // Transform the normal from tangent space to world space.
+    vec3 normal = normalize(fs_in.TBN * normalTangent);
 
     // Light direction is already in world space
     vec3 toLight = normalize(-_LightDirection);

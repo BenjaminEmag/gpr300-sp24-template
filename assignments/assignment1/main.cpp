@@ -16,6 +16,7 @@
 
 #include <ew/camera.h>
 #include <ew/cameraController.h>
+#include <iostream>
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 GLFWwindow* initWindow(const char* title, int width, int height);
@@ -37,31 +38,61 @@ struct Material {
 	float Shininess = 128;
 }material;
 
+bool blur = true;
+bool scanline = true;
+bool vignette = true;
+bool chromaticAbberation = true;
+float abberationStrenght = 2.0f;
+
 int main() {
+
 	GLFWwindow* window = initWindow("Assignment 1", screenWidth, screenHeight);
+	glEnable(GL_DEPTH_TEST);
+
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK); //Back face culling
-	glEnable(GL_DEPTH_TEST); //Depth testing
-
-	ew::Shader shader = ew::Shader("assets/lit.vert", "assets/lit.frag");
+	ew::Shader litShader = ew::Shader("assets/lit.vert", "assets/lit.frag");
 	ew::Model monkeyModel = ew::Model("assets/suzanne.fbx");
 	ew::Transform monkeyTransform;
 
 	GLuint brickTexture = ew::loadTexture("assets/brick2_color.jpg");
 	GLuint brickNormal = ew::loadTexture("assets/brick2_normal.jpg");
 
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, brickTexture);
-
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, brickNormal);
-
 	camera.position = glm::vec3(0.0f, 0.0f, 5.0f);
 	camera.target = glm::vec3(0.0f, 0.0f, 0.0f); //Look at the center of the scene
 	camera.aspectRatio = (float)screenWidth / screenHeight;
 	camera.fov = 60.0f; //Vertical field of view, in degrees
+
+	// Framebuffer Setup
+	unsigned int framebuffer;
+	glGenFramebuffers(1, &framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+	unsigned int textureColorbuffer;
+	glGenTextures(1, &textureColorbuffer);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, screenWidth, screenHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorbuffer, 0);
+
+	unsigned int rbo;
+	glGenRenderbuffers(1, &rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, screenWidth, screenHeight);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind
+
+	unsigned int dummyVAO;
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glCreateVertexArrays(1, &dummyVAO);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	ew::Shader postProcessShader("assets/buff.vert", "assets/buff.frag");
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -73,29 +104,55 @@ int main() {
 
 		// Spin Monkey
 		monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
-		shader.setMat4("_Model", monkeyTransform.modelMatrix());
-
 
 		// Move Camera
 		cameraController.move(window, &camera, deltaTime);
 
 		//RENDER
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+		glDepthMask(GL_TRUE);
+		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		litShader.use();
+		litShader.setMat4("_Model", monkeyTransform.modelMatrix());
+		litShader.setInt("_MainTex", 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, brickTexture);
+		litShader.setInt("_NormalMap", 1);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, brickNormal);
+		litShader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
+		litShader.setVec3("_EyePos", camera.position);
+		litShader.setFloat("_Material.Ka", material.Ka);
+		litShader.setFloat("_Material.Kd", material.Kd);
+		litShader.setFloat("_Material.Ks", material.Ks);
+		litShader.setFloat("_Material.Shininess", material.Shininess);
 
-		shader.use();
-		shader.setInt("_MainTex", 0);
-		shader.setInt("_NormalMap", 1);
-		shader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
-		shader.setVec3("_EyePos", camera.position);
+		monkeyModel.draw(); // Render the monkey model scene
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glDepthMask(GL_FALSE);
 
-		shader.setFloat("_Material.Ka", material.Ka);
-		shader.setFloat("_Material.Kd", material.Kd);
-		shader.setFloat("_Material.Ks", material.Ks);
-		shader.setFloat("_Material.Shininess", material.Shininess);
+		postProcessShader.use();
 
-		monkeyModel.draw(); //Draws monkey model using current shader
+		// Bind our offscreen texture
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+		postProcessShader.setInt("screenTexture", 0);
+
+		postProcessShader.setInt("blur", blur);
+		postProcessShader.setInt("chromaticAberration", chromaticAbberation);
+		postProcessShader.setFloat("aberrationStrength", abberationStrenght);
+		postProcessShader.setInt("vignette", vignette);
+		postProcessShader.setInt("scanline", scanline);
+
+		glDisable(GL_DEPTH_TEST);
+		glBindVertexArray(dummyVAO);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glBindVertexArray(0);
+		glEnable(GL_DEPTH_TEST);
+
 
 		drawUI();
 
@@ -104,7 +161,7 @@ int main() {
 	printf("Shutting down...");
 }
 
-void resetCamera(ew::Camera* camera, ew::CameraController* controller) {
+static void resetCamera(ew::Camera* camera, ew::CameraController* controller) {
 	camera->position = glm::vec3(0, 0, 5.0f);
 	camera->target = glm::vec3(0);
 	controller->yaw = controller->pitch = 0;
@@ -118,7 +175,7 @@ void drawUI() {
 
 	ImGui::Begin("Cool Monkey");
 	if (ImGui::Button("Reset Camera")) resetCamera(&camera, &cameraController);
-	
+
 	if (ImGui::CollapsingHeader("Material")) {
 		ImGui::SliderFloat("AmbientK", &material.Ka, 0.0f, 1.0f);
 		ImGui::SliderFloat("DiffuseK", &material.Kd, 0.0f, 1.0f);
@@ -126,6 +183,14 @@ void drawUI() {
 		ImGui::SliderFloat("Shininess", &material.Shininess, 2.0f, 1024.0f);
 	}
 
+	if (ImGui::CollapsingHeader("Post Process")) {
+		ImGui::Checkbox("chromatic Aberration", &chromaticAbberation);
+		ImGui::SliderFloat("Aberration Srenght", &abberationStrenght, 0.0f, 8.0f);
+		ImGui::Checkbox("Blur", &blur);
+		ImGui::Checkbox("Vignette", &vignette);
+		ImGui::Checkbox("Scan Lines", &scanline);
+
+	}
 	ImGui::End();
 
 	ImGui::Render();
@@ -174,4 +239,3 @@ GLFWwindow* initWindow(const char* title, int width, int height) {
 
 	return window;
 }
-
